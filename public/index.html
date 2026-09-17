@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Email Collection Builder</title>
+  <style>
+    :root {
+      --navy: #06203d;
+      --navy-2: #0c345c;
+      --ivory: #f7f2e9;
+      --sand: #e8ddcc;
+      --ink: #17202a;
+      --muted: #66717e;
+      --green: #138a55;
+      --red: #b42318;
+      --white: #ffffff;
+      --shadow: 0 18px 50px rgba(6, 32, 61, .11);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(232, 221, 204, .9), transparent 35%),
+        var(--ivory);
+      font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 64px; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.3fr .7fr;
+      gap: 28px;
+      align-items: end;
+      padding: 32px;
+      color: white;
+      border-radius: 26px;
+      background: linear-gradient(135deg, var(--navy), var(--navy-2));
+      box-shadow: var(--shadow);
+    }
+    .eyebrow { margin: 0 0 8px; color: #d8cbb7; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { max-width: 720px; margin: 0; font-size: clamp(30px, 5vw, 54px); line-height: 1.05; letter-spacing: -.04em; }
+    .hero p:last-child { margin: 14px 0 0; color: #dae4ee; font-size: 16px; }
+    .hero-note { padding: 18px; border: 1px solid rgba(255,255,255,.17); border-radius: 18px; background: rgba(255,255,255,.08); }
+    .hero-note strong { display: block; margin-bottom: 5px; }
+    .panel {
+      margin-top: 24px;
+      padding: 24px;
+      border: 1px solid rgba(6,32,61,.09);
+      border-radius: 22px;
+      background: rgba(255,255,255,.92);
+      box-shadow: var(--shadow);
+    }
+    .panel h2 { margin: 0 0 5px; color: var(--navy); font-size: 21px; }
+    .hint { margin: 0 0 18px; color: var(--muted); }
+    .url-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; }
+    input, textarea {
+      width: 100%;
+      border: 1px solid #cfd6dc;
+      border-radius: 12px;
+      color: var(--ink);
+      background: white;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input { height: 48px; padding: 0 14px; }
+    textarea { min-height: 92px; padding: 12px 14px; resize: vertical; }
+    input:focus, textarea:focus { border-color: #4778a7; box-shadow: 0 0 0 4px rgba(71,120,167,.13); }
+    .btn {
+      min-height: 46px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 12px;
+      font-weight: 750;
+      transition: transform .15s, opacity .15s, background .15s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { cursor: wait; opacity: .55; transform: none; }
+    .primary { color: white; background: var(--navy); }
+    .primary:hover { background: #0b3158; }
+    .secondary { color: var(--navy); background: var(--sand); }
+    .ghost { color: var(--navy); border: 1px solid #cbd5df; background: white; }
+    .status { min-height: 24px; margin: 14px 0 0; font-weight: 650; }
+    .status.success { color: var(--green); }
+    .status.error { color: var(--red); }
+    .hidden { display: none !important; }
+    .workspace { display: grid; grid-template-columns: minmax(0, .85fr) minmax(440px, 1.15fr); gap: 24px; align-items: start; }
+    .sticky { position: sticky; top: 18px; }
+    .field { margin-top: 15px; }
+    .field label { display: block; margin: 0 0 6px; color: var(--navy); font-size: 13px; font-weight: 800; }
+    .subjects { display: flex; flex-wrap: wrap; gap: 8px; margin: 11px 0 4px; }
+    .subject-chip {
+      padding: 8px 11px;
+      color: var(--navy);
+      border: 1px solid #d4c6b3;
+      border-radius: 999px;
+      background: #fffaf2;
+      font-size: 13px;
+      text-align: left;
+    }
+    .subject-chip:hover { border-color: var(--navy); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .preview-wrap { overflow: hidden; border: 1px solid #cfd6dc; border-radius: 16px; background: #f4f4f4; }
+    .preview-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; color: var(--muted); border-bottom: 1px solid #dce1e5; background: white; font-size: 12px; }
+    iframe { display: block; width: 100%; height: 760px; border: 0; background: #f4f4f4; }
+    .products-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .products-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 17px; }
+    .product {
+      overflow: hidden;
+      border: 1px solid #e0e4e8;
+      border-radius: 16px;
+      background: white;
+    }
+    .product-image { aspect-ratio: 1; padding: 10px; background: #f7f7f7; }
+    .product-image img { width: 100%; height: 100%; object-fit: contain; border-radius: 9px; }
+    .product-body { padding: 12px; }
+    .product-number { margin-bottom: 7px; color: #8a7253; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .product input { height: 40px; margin-top: 7px; padding: 0 10px; font-size: 12px; }
+    details { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    summary { cursor: pointer; font-weight: 700; }
+    .source { min-height: 280px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .small { color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      .hero, .workspace { grid-template-columns: 1fr; }
+      .sticky { position: static; }
+      .products-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .shell { width: min(100% - 20px, 1180px); padding-top: 10px; }
+      .hero, .panel { padding: 18px; border-radius: 18px; }
+      .url-row { grid-template-columns: 1fr; }
+      .products-grid { grid-template-columns: 1fr; }
+      iframe { height: 620px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Email Collection Builder</p>
+        <h1>Biến một link collection thành email HTML hoàn chỉnh.</h1>
+        <p>Lấy đúng 9 sản phẩm đầu, viết phần mở đầu, giữ nguyên template Mailchimp và xuất file chỉ trong một luồng.</p>
+      </div>
+      <div class="hero-note">
+        <strong>Bản 1.0</strong>
+        Dùng ảnh gốc của sản phẩm để email tải nhanh và ổn định. Bạn vẫn có thể sửa title, link và ảnh trước khi xuất.
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. Dán link collection</h2>
+      <p class="hint">Thứ tự sản phẩm trong email sẽ bám theo thứ tự hiển thị trên trang collection.</p>
+      <form id="generator-form" class="url-row">
+        <input id="collection-url" type="url" required value="https://judiedude.store/collection/cat?sort=popular" aria-label="Collection URL">
+        <button id="generate-button" class="btn primary" type="submit">Tạo email</button>
+      </form>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <div id="results" class="hidden">
+      <section class="workspace">
+        <div class="panel">
+          <h2>2. Nội dung email</h2>
+          <p class="hint">Tool tự viết bản nháp. Chọn subject khác hoặc sửa trực tiếp nếu cần.</p>
+          <div id="subjects" class="subjects"></div>
+
+          <div class="field">
+            <label for="subject">Subject</label>
+            <input id="subject" maxlength="180">
+          </div>
+          <div class="field">
+            <label for="preheader">Preheader</label>
+            <input id="preheader" maxlength="300">
+          </div>
+          <div class="field">
+            <label for="kicker">Dòng giới thiệu trên cùng</label>
+            <textarea id="kicker" maxlength="300"></textarea>
+          </div>
+          <div class="field">
+            <label for="headline">Headline</label>
+            <input id="headline" maxlength="180">
+          </div>
+          <div class="field">
+            <label for="body-copy">Đoạn mô tả</label>
+            <textarea id="body-copy" maxlength="800"></textarea>
+          </div>
+
+          <div class="actions">
+            <button id="apply-button" class="btn secondary" type="button">Cập nhật preview</button>
+            <button id="copy-subject-button" class="btn ghost" type="button">Copy subject</button>
+            <button id="download-button" class="btn primary" type="button">Tải file HTML</button>
+          </div>
+          <p class="small">Subject vẫn cần được điền vào phần subject của Mailchimp, Klaviyo hoặc GMass khi gửi.</p>
+        </div>
+
+        <div class="panel sticky">
+          <div class="preview-wrap">
+            <div class="preview-bar">
+              <span>Preview email</span>
+              <span>660 px</span>
+            </div>
+            <iframe id="preview" title="Email preview" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="products-head">
+          <div>
+            <h2>3. Chín sản phẩm được chọn</h2>
+            <p class="hint">Có thể sửa title, URL sản phẩm hoặc URL ảnh trước khi cập nhật preview.</p>
+          </div>
+        </div>
+        <div id="products" class="products-grid"></div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Xem mã HTML đã tạo</summary>
+          <textarea id="html-source" class="source" readonly spellcheck="false"></textarea>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const state = {
+      collectionUrl: "",
+      products: [],
+      copy: {},
+      html: ""
+    };
+
+    const elements = {
+      form: document.getElementById("generator-form"),
+      url: document.getElementById("collection-url"),
+      generate: document.getElementById("generate-button"),
+      status: document.getElementById("status"),
+      results: document.getElementById("results"),
+      subjects: document.getElementById("subjects"),
+      subject: document.getElementById("subject"),
+      preheader: document.getElementById("preheader"),
+      kicker: document.getElementById("kicker"),
+      headline: document.getElementById("headline"),
+      body: document.getElementById("body-copy"),
+      apply: document.getElementById("apply-button"),
+      copySubject: document.getElementById("copy-subject-button"),
+      download: document.getElementById("download-button"),
+      products: document.getElementById("products"),
+      preview: document.getElementById("preview"),
+      source: document.getElementById("html-source")
+    };
+
+    function setStatus(message, type) {
+      elements.status.textContent = message || "";
+      elements.status.className = "status" + (type ? " " + type : "");
+    }
+
+    function setBusy(busy) {
+      elements.generate.disabled = busy;
+      elements.apply.disabled = busy;
+      elements.download.disabled = busy;
+      elements.generate.textContent = busy ? "Đang xử lý…" : "Tạo email";
+    }
+
+    async function request(payload) {
+      const response = await fetch("/.netlify/functions/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Không thể xử lý yêu cầu.");
+      return data;
+    }
+
+    function showSubjects(subjects) {
+      elements.subjects.replaceChildren();
+      (subjects || []).forEach((subject) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "subject-chip";
+        button.textContent = subject;
+        button.addEventListener("click", () => {
+          elements.subject.value = subject;
+        });
+        elements.subjects.appendChild(button);
+      });
+    }
+
+    function field(label, value, name, index) {
+      const input = document.createElement("input");
+      input.value = value || "";
+      input.dataset.field = name;
+      input.dataset.index = String(index);
+      input.setAttribute("aria-label", label);
+      return input;
+    }
+
+    function showProducts(products) {
+      elements.products.replaceChildren();
+      products.forEach((product, index) => {
+        const card = document.createElement("article");
+        card.className = "product";
+
+        const imageWrap = document.createElement("div");
+        imageWrap.className = "product-image";
+        const image = document.createElement("img");
+        image.src = product.image;
+        image.alt = product.title;
+        image.loading = "lazy";
+        imageWrap.appendChild(image);
+
+        const body = document.createElement("div");
+        body.className = "product-body";
+        const number = document.createElement("div");
+        number.className = "product-number";
+        number.textContent = "Sản phẩm " + (index + 1);
+        body.appendChild(number);
+        body.appendChild(field("Title sản phẩm " + (index + 1), product.title, "title", index));
+
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "Sửa link và ảnh";
+        details.appendChild(summary);
+        details.appendChild(field("URL sản phẩm " + (index + 1), product.url, "url", index));
+        const imageInput = field("URL ảnh " + (index + 1), product.image, "image", index);
+        imageInput.addEventListener("change", () => { image.src = imageInput.value; });
+        details.appendChild(imageInput);
+        body.appendChild(details);
+
+        card.appendChild(imageWrap);
+        card.appendChild(body);
+        elements.products.appendChild(card);
+      });
+    }
+
+    function copyFromFields() {
+      return {
+        subject: elements.subject.value.trim(),
+        preheader: elements.preheader.value.trim(),
+        kicker: elements.kicker.value.trim(),
+        headline: elements.headline.value.trim(),
+        body: elements.body.value.trim()
+      };
+    }
+
+    function productsFromFields() {
+      return state.products.map((product, index) => {
+        const get = (name) => document.querySelector('[data-field="' + name + '"][data-index="' + index + '"]');
+        return {
+          title: get("title").value.trim(),
+          url: get("url").value.trim(),
+          image: get("image").value.trim()
+        };
+      });
+    }
+
+    function showHtml(html) {
+      state.html = html;
+      elements.preview.srcdoc = html;
+      elements.source.value = html;
+    }
+
+    function hydrate(data) {
+      state.collectionUrl = data.collectionUrl;
+      state.products = data.products;
+      state.copy = data.copy;
+      elements.url.value = data.collectionUrl;
+      elements.subject.value = data.copy.subject || data.copy.subjects[0] || "";
+      elements.preheader.value = data.copy.preheader || "";
+      elements.kicker.value = data.copy.kicker || "";
+      elements.headline.value = data.copy.headline || "";
+      elements.body.value = data.copy.body || "";
+      showSubjects(data.copy.subjects);
+      showProducts(data.products);
+      showHtml(data.html);
+      elements.results.classList.remove("hidden");
+    }
+
+    async function renderEdits() {
+      setBusy(true);
+      setStatus("Đang cập nhật template…");
+      try {
+        state.products = productsFromFields();
+        state.copy = copyFromFields();
+        const data = await request({
+          action: "render",
+          url: state.collectionUrl,
+          products: state.products,
+          copy: state.copy
+        });
+        showHtml(data.html);
+        setStatus("Đã cập nhật preview.", "success");
+        return true;
+      } catch (error) {
+        setStatus(error.message, "error");
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    elements.form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setBusy(true);
+      setStatus("Đang đọc collection và lấy 9 sản phẩm đầu…");
+      try {
+        const data = await request({ action: "scrape", url: elements.url.value.trim() });
+        hydrate(data);
+        setStatus("Đã tạo email từ 9 sản phẩm đầu tiên.", "success");
+        elements.results.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        setStatus(error.message, "error");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    elements.apply.addEventListener("click", renderEdits);
+
+    elements.copySubject.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(elements.subject.value);
+        setStatus("Đã copy subject.", "success");
+      } catch {
+        setStatus("Không thể copy tự động. Hãy copy trực tiếp trong ô Subject.", "error");
+      }
+    });
+
+    elements.download.addEventListener("click", async () => {
+      const ready = await renderEdits();
+      if (!ready) return;
+
+      const blob = new Blob([state.html], { type: "text/html;charset=utf-8" });
+      const link = document.createElement("a");
+      const path = new URL(state.collectionUrl).pathname.split("/").filter(Boolean).at(-1) || "collection";
+      link.href = URL.createObjectURL(blob);
+      link.download = "email-" + path.replace(/[^a-z0-9-_]+/gi, "-").toLowerCase() + ".html";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      setStatus("Đã xuất file HTML.", "success");
+    });
+  </script>
+</body>
+</html>
