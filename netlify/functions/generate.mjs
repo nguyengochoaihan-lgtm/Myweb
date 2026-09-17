@@ -12,6 +12,15 @@ import {
 
 const TEMPLATE_PATH = fileURLToPath(new URL("./email-template.html", import.meta.url));
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
+const DIRECT_TIMEOUT_MS = 8000;
+const WARM_TIMEOUT_MS = 4000;
+const RETRY_TIMEOUT_MS = 8000;
+const READER_TIMEOUT_MS = 20000;
+const RETRYABLE_BLOCK_STATUSES = new Set([401, 403, 429, 503]);
+const CHROME_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) " +
+  "Chrome/152.0.0.0 Safari/537.36";
 let templateCache = "";
 
 function json(statusCode, payload) {
@@ -96,45 +105,232 @@ async function assertSafeFetchTarget(url) {
   }
 }
 
-async function fetchHtml(inputUrl) {
+function browserHeaders(url, { referer = "", cookie = "" } = {}) {
+  let fetchSite = "none";
+  if (referer) {
+    try {
+      fetchSite = new URL(referer).origin === url.origin ? "same-origin" : "cross-site";
+    } catch {
+      fetchSite = "cross-site";
+    }
+  }
+
+  return {
+    "user-agent": CHROME_USER_AGENT,
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "accept-language": "en-US,en;q=0.9",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    priority: "u=0, i",
+    "sec-ch-ua": "\"Chromium\";v=\"152\", \"Google Chrome\";v=\"152\", \"Not_A Brand\";v=\"99\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "sec-fetch-dest": "document",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-site": fetchSite,
+    "sec-fetch-user": "?1",
+    "upgrade-insecure-requests": "1",
+    ...(referer ? { referer } : {}),
+    ...(cookie ? { cookie } : {})
+  };
+}
+
+function splitSetCookieHeader(value) {
+  if (!value) return [];
+  return value.split(/,(?=\s*[^;,=\s]+=[^;,]*)/g);
+}
+
+function responseCookies(response) {
+  if (typeof response.headers.getSetCookie === "function") {
+    return response.headers.getSetCookie();
+  }
+  return splitSetCookieHeader(response.headers.get("set-cookie"));
+}
+
+function mergeCookieHeader(existing, setCookieValues) {
+  const pairs = new Map();
+
+  for (const pair of String(existing || "").split(/;\s*/)) {
+    const separator = pair.indexOf("=");
+    if (separator > 0) pairs.set(pair.slice(0, separator), pair);
+  }
+
+  for (const value of setCookieValues) {
+    const pair = String(value || "").split(";")[0].trim();
+    const separator = pair.indexOf("=");
+    if (separator > 0) pairs.set(pair.slice(0, separator), pair);
+  }
+
+  return [...pairs.values()].join("; ");
+}
+
+function rememberCookies(response, url, cookieJar) {
+  const cookies = responseCookies(response);
+  if (!cookies.length) return;
+  cookieJar.set(url.origin, mergeCookieHeader(cookieJar.get(url.origin), cookies));
+}
+
+async function discardBody(response) {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // The body may already be closed.
+  }
+}
+
+async function fetchWithBrowser(inputUrl, {
+  cookieJar = new Map(),
+  referer = "",
+  timeoutMs = DIRECT_TIMEOUT_MS
+} = {}) {
   let url = parsePublicUrl(inputUrl);
+  let currentReferer = referer;
 
   for (let redirect = 0; redirect < 5; redirect += 1) {
     await assertSafeFetchTarget(url);
 
     const response = await fetch(url, {
       redirect: "manual",
-      signal: AbortSignal.timeout(18000),
-      headers: {
-        "user-agent": "Mozilla/5.0 (compatible; EmailCollectionBuilder/1.0)",
-        accept: "text/html,application/xhtml+xml"
-      }
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: browserHeaders(url, {
+        referer: currentReferer,
+        cookie: cookieJar.get(url.origin) || ""
+      })
     });
+
+    rememberCookies(response, url, cookieJar);
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("Website chuyển hướng nhưng không cung cấp URL mới.");
-      url = new URL(location, url);
+      const previousUrl = url;
+      url = new URL(location, previousUrl);
+      currentReferer = previousUrl.href;
+      await discardBody(response);
       continue;
     }
 
-    if (!response.ok) {
-      throw new Error("Website trả về HTTP " + response.status + ".");
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-    if (!/html|xhtml/i.test(contentType)) {
-      throw new Error("Đường dẫn không trả về trang HTML.");
-    }
-
-    const html = await response.text();
-    if (Buffer.byteLength(html, "utf8") > MAX_HTML_BYTES) {
-      throw new Error("Trang collection lớn hơn giới hạn 5 MB.");
-    }
-    return { html, finalUrl: url.href };
+    return { response, finalUrl: url.href, cookieJar };
   }
 
   throw new Error("Website chuyển hướng quá nhiều lần.");
+}
+
+async function warmBrowserSession(inputUrl, cookieJar) {
+  const target = parsePublicUrl(inputUrl);
+  const homepage = new URL("/", target);
+  try {
+    const result = await fetchWithBrowser(homepage.href, {
+      cookieJar,
+      referer: target.origin + "/",
+      timeoutMs: WARM_TIMEOUT_MS
+    });
+    await discardBody(result.response);
+  } catch {
+    // Warming is best effort. The rendered-browser fallback remains available.
+  }
+}
+
+async function readHtmlResponse(response, finalUrl, { allowPlainText = false } = {}) {
+  if (!response.ok) {
+    throw new Error("Website trả về HTTP " + response.status + ".");
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!/html|xhtml/i.test(contentType) && !(allowPlainText && /text\/plain/i.test(contentType))) {
+    throw new Error("Đường dẫn không trả về trang HTML.");
+  }
+
+  const html = await response.text();
+  if (Buffer.byteLength(html, "utf8") > MAX_HTML_BYTES) {
+    throw new Error("Trang collection lớn hơn giới hạn 5 MB.");
+  }
+  if (!/<(?:html|body|main|article|a|script)\b/i.test(html)) {
+    throw new Error("Website không trả về nội dung HTML có thể đọc.");
+  }
+
+  return { html, finalUrl };
+}
+
+async function fetchViaRenderedBrowser(inputUrl, blockedStatus) {
+  const target = parsePublicUrl(inputUrl);
+  await assertSafeFetchTarget(target);
+
+  const readerUrl = "https://r.jina.ai/" + target.href;
+  let response;
+  try {
+    response = await fetch(readerUrl, {
+      redirect: "error",
+      signal: AbortSignal.timeout(READER_TIMEOUT_MS),
+      headers: {
+        "user-agent": "EmailCollectionBuilder/1.1",
+        accept: "text/plain",
+        "x-engine": "browser",
+        "x-respond-with": "html",
+        "x-respond-timing": "resource-idle",
+        "x-timeout": "15",
+        "x-cache-tolerance": "300",
+        "x-base": "final"
+      }
+    });
+  } catch {
+    throw new Error(
+      "Website chặn truy cập tự động (HTTP " + blockedStatus +
+      ") và chế độ trình duyệt dự phòng cũng không kết nối được."
+    );
+  }
+
+  if (!response.ok) {
+    await discardBody(response);
+    throw new Error(
+      "Website chặn truy cập tự động (HTTP " + blockedStatus +
+      "); chế độ trình duyệt dự phòng trả về HTTP " + response.status + "."
+    );
+  }
+
+  return readHtmlResponse(response, target.href, { allowPlainText: true });
+}
+
+async function fetchHtml(inputUrl) {
+  const target = parsePublicUrl(inputUrl);
+  const cookieJar = new Map();
+  const first = await fetchWithBrowser(target.href, {
+    cookieJar,
+    timeoutMs: DIRECT_TIMEOUT_MS
+  });
+
+  if (first.response.ok) {
+    return readHtmlResponse(first.response, first.finalUrl);
+  }
+
+  if (!RETRYABLE_BLOCK_STATUSES.has(first.response.status)) {
+    const status = first.response.status;
+    await discardBody(first.response);
+    throw new Error("Website trả về HTTP " + status + ".");
+  }
+
+  const firstStatus = first.response.status;
+  await discardBody(first.response);
+  await warmBrowserSession(first.finalUrl, cookieJar);
+
+  const retry = await fetchWithBrowser(first.finalUrl, {
+    cookieJar,
+    referer: new URL(first.finalUrl).origin + "/",
+    timeoutMs: RETRY_TIMEOUT_MS
+  });
+
+  if (retry.response.ok) {
+    return readHtmlResponse(retry.response, retry.finalUrl);
+  }
+
+  const retryStatus = retry.response.status;
+  await discardBody(retry.response);
+
+  if (!RETRYABLE_BLOCK_STATUSES.has(retryStatus)) {
+    throw new Error("Website trả về HTTP " + retryStatus + ".");
+  }
+
+  return fetchViaRenderedBrowser(retry.finalUrl, retryStatus || firstStatus);
 }
 
 async function getTemplate() {
