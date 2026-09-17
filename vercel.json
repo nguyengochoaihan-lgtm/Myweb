@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/generate.mjs": {
-      "maxDuration": 30,
+      "maxDuration": 60,
       "includeFiles": "netlify/functions/email-template.html"
     }
   },
