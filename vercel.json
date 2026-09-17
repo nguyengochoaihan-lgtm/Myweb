@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "functions": {
+    "api/generate.mjs": {
+      "maxDuration": 30,
+      "includeFiles": "netlify/functions/email-template.html"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/.netlify/functions/generate",
+      "destination": "/api/generate"
+    }
+  ]
+}
